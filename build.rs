@@ -14,10 +14,10 @@ fn main() {
 }
 
 mod shell_completions {
-	include!("src/cli_args.rs");
-
 	use clap::CommandFactory;
 	use clap_complete::{Shell, generate_to};
+
+	include!("src/cli_args.rs");
 
 	pub fn generate() {
 		println!("cargo:rerun-if-env-changed=COMPLETIONS_DIR");
@@ -28,10 +28,7 @@ mod shell_completions {
 		let mut cmd = CliArgs::command();
 		for shell in [Shell::Bash, Shell::Fish, Shell::Zsh] {
 			generate_to(shell, &mut cmd, env!("CARGO_PKG_NAME"), &directory)
-				.map_err(|err| {
-					eprintln!("Error: {}", err);
-				})
-				.ok();
+				.unwrap();
 		}
 	}
 }
