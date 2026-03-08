@@ -20,7 +20,7 @@ native-tls = ["raur/native-tls"] # build with support for OS native TLS
 rustls-tls = ["raur/rusttls-tls"] # build with rustls TLS 
 
 [build-dependencies]
-clap = { version = "4.5.60",      default-features = false, features = ["derive"]  }
+clap = { version = "4.5.60",      default-features = false, features = ["derive"] }
 clap_complete = "4.5.66"
 libseccomp = "0.4.0"
 
@@ -45,7 +45,7 @@ regex = { version = "1.12.3",     default-features = false, features = ["perf"] 
 rm_rf = "0.6.2"
 ruzstd = "0.8.2"
 srcinfo = "2.1.0"
-clap = { version = "4.5.60",      default-features = false, features = ["color", "error-context", "help", "std", "suggestions", "derive"]  }
+clap = { version = "4.5.60",      default-features = false, features = ["color", "error-context", "help", "std", "suggestions", "derive"] }
 tar = { version = "0.4.44",       default-features = false }
 termize = "0.2.1"
 liblzma = "0.4.6"
