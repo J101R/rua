@@ -27,7 +27,22 @@ RUA is a build tool for ArchLinux, AUR. Its features:
 
 `rua install pinta`  # install or upgrade a package
 
-`rua upgrade`  # upgrade all AUR packages. You can selectively ignore packages by using `--ignore` or adding them to `IgnorePkg` in `pacman.conf` (same as with non-AUR packages and `pacman`). You can upgrade only specific packages with `rua install A B C`.
+`rua upgrade`  # Upgrade all AUR packages
+
+By default, this command upgrades all installed AUR packages.
+You can also specify package names to upgrade only selected packages.
+
+Packages can be ignored using the `--ignore` flag or by adding them to
+`IgnorePkg` in `pacman.conf`. This uses the same mechanism as ignoring
+non-AUR packages in `pacman`.
+
+To upgrade only specific packages, run:
+
+`rua upgrade A B C`
+
+Alternatively:
+
+`rua install A B C`
 
 `rua shellcheck path/to/my/PKGBUILD`  # run `shellcheck` on a PKGBUILD, discovering potential problems with the build instruction. Takes care of PKGBUILD-specific variables.
 

@@ -15,7 +15,9 @@ use prettytable::format::*;
 use prettytable::*;
 use regex::Regex;
 use std::cmp::Ordering;
+use std::collections::HashMap;
 use std::collections::HashSet;
+use anyhow::anyhow;
 
 fn pkg_is_devel(name: &str) -> bool {
 	lazy_static! {
@@ -26,10 +28,10 @@ fn pkg_is_devel(name: &str) -> bool {
 	RE.is_match(name)
 }
 
-pub fn upgrade_printonly(devel: bool, ignored: &HashSet<&str>) {
+pub fn upgrade_printonly(devel: bool, ignored: &HashSet<&str>, target: &Option<Vec<String>>) {
 	let alpm = new_alpm_wrapper();
 	let (outdated, nonexistent) =
-		calculate_upgrade(&*alpm, devel, ignored).expect("Calculating upgrade failed");
+		calculate_upgrade(&*alpm, devel, ignored, target).expect("Calculating upgrade failed");
 
 	if outdated.is_empty() && nonexistent.is_empty() {
 		eprintln!(
@@ -46,10 +48,10 @@ pub fn upgrade_printonly(devel: bool, ignored: &HashSet<&str>) {
 	}
 }
 
-pub fn upgrade_real(devel: bool, rua_paths: &RuaPaths, ignored: &HashSet<&str>) {
+pub fn upgrade_real(devel: bool, rua_paths: &RuaPaths, ignored: &HashSet<&str>, target: &Option<Vec<String>>) {
 	let alpm = new_alpm_wrapper();
 	let (outdated, nonexistent) =
-		calculate_upgrade(&*alpm, devel, ignored).expect("calculating upgrade failed");
+		calculate_upgrade(&*alpm, devel, ignored, target).expect("calculating upgrade failed");
 
 	if outdated.is_empty() && nonexistent.is_empty() {
 		eprintln!(
@@ -87,13 +89,29 @@ fn calculate_upgrade(
 	alpm: &dyn AlpmWrapper,
 	devel: bool,
 	locally_ignored_packages: &HashSet<&str>,
+	target: &Option<Vec<String>>
 ) -> Result<(OutdatedPkgs, ForeignPkgs)> {
 	let system_ignored_packages = pacman::get_ignored_packages().unwrap_or_else(|err| {
 		warn!("Could not get ignored packages, {}", err);
 		HashSet::new()
 	});
 
-	let aur_pkgs = alpm.get_non_pacman_packages()?;
+	let raw_pkgs = alpm.get_non_pacman_packages()?;
+	let aur_pkgs: Vec<(String, String)> = match target {
+		Some(list) => {
+			let lookup: HashMap<String, (String, String)> = raw_pkgs.iter()
+				.map(|p| (p.0.clone(), p.clone())).collect();
+			list
+			.iter()
+			.map(|user_pkg| {
+				lookup
+					.get(user_pkg)
+					.cloned()
+					.ok_or_else(|| anyhow!("Could not find a package named: {}", user_pkg))
+			}).collect::<Result<Vec<_>, _>>()?
+		},
+		None => raw_pkgs,
+	};
 
 	let aur_pkgs_string = aur_pkgs
 		.iter()

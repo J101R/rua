@@ -77,16 +77,17 @@ fn main() -> Result<ExitCode> {
 			devel,
 			printonly,
 			ignored,
+			target,
 		} => {
 			let ignored_set = ignored
 				.iter()
 				.flat_map(|i| i.split(','))
 				.collect::<HashSet<&str>>();
 			if *printonly {
-				action_upgrade::upgrade_printonly(*devel, &ignored_set);
+				action_upgrade::upgrade_printonly(*devel, &ignored_set, target);
 			} else {
 				let paths = rua_paths::RuaPaths::initialize_paths();
-				action_upgrade::upgrade_real(*devel, &paths, &ignored_set);
+				action_upgrade::upgrade_real(*devel, &paths, &ignored_set, target);
 			}
 		}
 	};

@@ -136,6 +136,11 @@ Supports: git, hg, bzr, svn, cvs, darcs. Currently by suffix only."
 			help = "Don't upgrade the specified package(s). Accepts multiple arguments separated by `,`."
 		)]
 		ignored: Option<String>,
+		#[clap(
+			help = "upgrade the specified package(s). Accepts multiple names separated by a space.",
+			value_hint = ValueHint::CommandWithArguments
+		)]
+		target: Option<Vec<String>>
 	}
 }
 
