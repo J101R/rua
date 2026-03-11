@@ -36,7 +36,7 @@ mod shell_completions {
 mod seccomp {
 	use std::fs::File;
 	use std::path::Path;
-	use libseccomp::{ScmpAction, ScmpArch, ScmpFilterContext, ScmpSyscall};
+	use libseccomp::{ScmpAction, ScmpFilterContext, ScmpSyscall};
 
 	const SYSCALL_BLACKLIST: &[&str] = &[
 		"_sysctl",
@@ -96,11 +96,6 @@ mod seccomp {
 		let mut ctx = ScmpFilterContext::new(ScmpAction::Allow)
 			.expect("Failed to create a seccomp filter context.");
 
-		// Restricts the filter to the native architecture only.
-    	// This prevents the same filter from being bypassed on e.g. x86_64 vs. i386.
-		ctx.add_arch(ScmpArch::Native)
-			.expect("Failed to add systemcalls from native architecture to seccomp filter context.");
-
 		// Deny these syscalls
 		for name in SYSCALL_BLACKLIST {
 			// Resolve the syscall number; if the name isn’t known on this arch,
@@ -108,7 +103,7 @@ mod seccomp {
 			match ScmpSyscall::from_name(name) {
 				Ok(syscall) => {
 					// Add rule to filter. The syscall number will later be translated for all enabled architectures in the filter.
-					ctx.add_rule(ScmpAction::KillThread, syscall)
+					ctx.add_rule(ScmpAction::KillProcess, syscall)
 					.unwrap_or_else(|e| {
 						panic!(
 							"Failed to compile seccomp filter, failed to add rule for syscall {}({}). Error: {}",
