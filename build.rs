@@ -38,7 +38,7 @@ mod seccomp {
 	use std::path::Path;
 	use libseccomp::{ScmpAction, ScmpFilterContext, ScmpSyscall};
 
-	const SYSCALL_BLACKLIST: &[&str] = &[
+	const DENIED_SYSCALLS: &[&str] = &[
 		"_sysctl",
 		"acct",
 		"add_key",
@@ -97,7 +97,7 @@ mod seccomp {
 			.expect("Failed to create a seccomp filter context.");
 
 		// Deny these syscalls
-		for name in SYSCALL_BLACKLIST {
+		for name in DENIED_SYSCALLS {
 			// Resolve the syscall number; if the name isn’t known on this arch,
         	// we panic and fail the build (e.g., some syscalls are only on older kernels).
 			match ScmpSyscall::from_name(name) {
