@@ -1,6 +1,9 @@
 use crate::terminal_util;
 extern crate libflate;
 extern crate ruzstd;
+use anyhow::Context;
+use anyhow::Ok;
+use anyhow::bail;
 use colored::*;
 use indexmap::IndexSet;
 use libflate::gzip::Decoder;
@@ -11,84 +14,62 @@ use std::fs::File;
 use std::io::Read;
 use std::path::Path;
 use std::path::PathBuf;
+use anyhow::Result;
 use tar::*;
 
-pub fn tar_check_unwrap(tar_file: &Path, file_name: &str) {
-	let result = tar_check(tar_file, file_name);
-	result.unwrap_or_else(|err| {
-		eprintln!("{}", err);
-		std::process::exit(1)
-	})
-}
-
-pub fn tar_check(tar_file: &Path, tar_str: &str) -> Result<(), String> {
-	let archive = File::open(tar_file).unwrap_or_else(|_| panic!("cannot open file {}", tar_str));
+pub fn tar_check(tar_file: &Path, tar_str: &str) -> Result<()> {
+	let archive = File::open(tar_file)
+		.with_context(|| format!("cannot open file {}", tar_str))?;
 	debug!("Checking file {}", tar_str);
 	if tar_str.ends_with(".tar") {
-		tar_check_archive(Archive::new(archive), tar_str);
-		Ok(())
+		tar_check_archive(Archive::new(archive), tar_str)?;
 	} else if tar_str.ends_with(".tar.xz") || tar_str.ends_with(".tar.lzma") {
-		tar_check_archive(Archive::new(XzDecoder::new(archive)), tar_str);
-		Ok(())
+		tar_check_archive(Archive::new(XzDecoder::new(archive)), tar_str)?;
 	} else if tar_str.ends_with(".tar.gz") || tar_str.ends_with(".tar.gzip") {
-		match Decoder::new(archive) {
-			Ok(decoded) => {
-				tar_check_archive(Archive::new(decoded), tar_str);
-				Ok(())
-			},
-			Err(err) => {
-				Err(format!("File {:?} seems to be corrupted, could not decode the gzip contents. Underlying libflate error: {}", tar_file, err))
-			},
-		}
+		let decoded = Decoder::new(archive)
+			.with_context(|| format!("File {:?} seems to be corrupted, could not decode the gzip contents", tar_file))?;
+		tar_check_archive(Archive::new(decoded), tar_str)?;
 	} else if tar_str.ends_with(".tar.zst") || tar_str.ends_with(".tar.zstd") {
 		let mut archive = archive;
-		match StreamingDecoder::new(&mut archive) {
-			Ok(decoder) => {
-				tar_check_archive(Archive::new(decoder), tar_str);
-				Ok(())
-			},
-			Err(err) => {
-				Err(format!("File {:?} seems to be corrupted, could not decode the zstd contents. Underlying ruzstd error: {}", tar_file, err))
-			},
-		}
+		let decoder = StreamingDecoder::new(&mut archive)
+			.with_context(|| format!("File {:?} seems to be corrupted, could not decode the zstd contents", tar_file))?;
+		tar_check_archive(Archive::new(decoder), tar_str)?;
 	} else {
-		Err(format!(
-			"Archive {:?} cannot be analyzed. Only .tar or .tar.xz or .tar.gz or .tar.zst files are supported",
-			tar_file
-		))
+		bail!("Archive {:?} cannot be analyzed. Only .tar or .tar.xz or .tar.gz or .tar.zst files are supported", tar_file)
 	}
+	Ok(())
 }
 
-fn tar_check_archive<R: Read>(mut archive: Archive<R>, path_str: &str) {
+fn tar_check_archive<R: Read>(mut archive: Archive<R>, path_str: &str) -> Result<()> {
 	let mut install_file = String::new();
 	let mut all_files = Vec::new();
 	let mut executable_files = Vec::new();
 	let mut suid_files = Vec::new();
 	let archive_files = archive
 		.entries()
-		.unwrap_or_else(|e| panic!("cannot open archive {}, {}", path_str, e));
+		.with_context(|| format!("cannot open archive {}", path_str))?;
 	for file in archive_files {
 		let mut file =
-			file.unwrap_or_else(|e| panic!("cannot access tar file in {}, {}", path_str, e));
+			file.with_context(|| format!("cannot access tar file in {}", path_str))?;
 		let path = {
-			let path = file.header().path().unwrap_or_else(|e| {
-				panic!(
-					"Failed to extract tar file metadata for file in {}, {}",
-					path_str, e,
+			let path = file.header().path().with_context(||
+				format!(
+					"Failed to extract tar file metadata for file in {}",
+					path_str,
 				)
-			});
+			)?;
 			path.to_str()
-				.unwrap_or_else(|| panic!("{}:{} failed to parse file name", file!(), line!()))
+				.with_context(|| format!("{}:{} failed to parse file name", file!(), line!()))?
 				.to_owned()
 		};
-		let mode = file.header().mode().unwrap_or_else(|_| {
-			panic!(
+		let mode = file.header().mode().with_context(||
+			format!(
 				"{}:{} Failed to get file mode for file {}",
 				file!(),
 				line!(),
 				path
 			)
-		});
+		)?;
 		let is_normal = !path.ends_with('/') && !path.starts_with('.');
 		if is_normal {
 			all_files.push(path.clone());
@@ -100,9 +81,9 @@ fn tar_check_archive<R: Read>(mut archive: Archive<R>, path_str: &str) {
 			suid_files.push(path.clone());
 		}
 		if &path == ".INSTALL" {
-			file.read_to_string(&mut install_file).unwrap_or_else(|_| {
-				panic!("Failed to read INSTALL script from tar file {}", path_str)
-			});
+			file.read_to_string(&mut install_file).with_context(||
+				format!("Failed to read INSTALL script from tar file {}", path_str)
+			)?;
 		}
 	}
 
@@ -161,7 +142,8 @@ fn tar_check_archive<R: Read>(mut archive: Archive<R>, path_str: &str) {
 			eprintln!("{}", &install_file);
 		} else if &string == "t" {
 			let dir = PathBuf::from(path_str);
-			let dir = dir.parent().unwrap_or_else(|| Path::new("."));
+			let dir = dir.parent()
+				.unwrap_or_else(|| Path::new("."));
 			eprintln!("Exit the shell with `logout` or Ctrl-D...");
 			terminal_util::run_env_command(dir, "SHELL", "bash", &[]);
 		} else if &string == "o" {
@@ -171,6 +153,7 @@ fn tar_check_archive<R: Read>(mut archive: Archive<R>, path_str: &str) {
 			std::process::exit(-1);
 		}
 	}
+	Ok(())
 }
 
 pub fn common_suffix_length(pkg_names: &[&str], archive_whitelist: &IndexSet<&str>) -> usize {

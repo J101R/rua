@@ -1,4 +1,7 @@
 use crate::rua_paths::RuaPaths;
+use anyhow::Context;
+use anyhow::Ok;
+use anyhow::Result;
 use colored::*;
 use std::path::Path;
 use std::process::Command;
@@ -8,33 +11,37 @@ use std::process::Stdio;
 /// to let the user review the initial diff.
 /// Also, the local branch does NOT track the remote one --
 /// instead it's being merged upon each review.
-pub fn init_repo(pkg: &str, dir: &Path, rua_paths: &RuaPaths) {
-	silently_run_panic_if_error(&["init", "-q"], dir, rua_paths);
+pub fn init_repo(pkg: &str, dir: &Path, rua_paths: &RuaPaths) -> Result<()> {
+	silently_run_panic_if_error(&["init", "-q"], dir, rua_paths)?;
 	let http_ref = format!("https://aur.archlinux.org/{}.git", pkg);
-	silently_run_panic_if_error(&["remote", "add", "upstream", &http_ref], dir, rua_paths);
-	fetch(dir, rua_paths);
+	silently_run_panic_if_error(&["remote", "add", "upstream", &http_ref], dir, rua_paths)?;
+	fetch(dir, rua_paths)?;
+	Ok(())
 }
 
-pub fn fetch(dir: &Path, rua_paths: &RuaPaths) {
-	silently_run_panic_if_error(&["fetch", "-q", "upstream"], dir, rua_paths);
+pub fn fetch(dir: &Path, rua_paths: &RuaPaths) -> Result<()> {
+	silently_run_panic_if_error(&["fetch", "-q", "upstream"], dir, rua_paths)?;
+	Ok(())
 }
 
-pub fn is_upstream_merged(dir: &Path, rua_paths: &RuaPaths) -> bool {
-	git(dir, rua_paths)
+pub fn is_upstream_merged(dir: &Path, rua_paths: &RuaPaths) -> Result<bool> {
+	Ok(git(dir, rua_paths)
 		.args(["merge-base", "--is-ancestor", "upstream/master", "HEAD"])
 		.stderr(Stdio::null())
 		.status()
-		.expect("failed to run git")
-		.success()
+		.context("failed to run git")?
+		.success())
 }
 
-pub fn show_upstream_diff(dir: &Path, reverse: bool, rua_paths: &RuaPaths) {
+pub fn show_upstream_diff(dir: &Path, reverse: bool, rua_paths: &RuaPaths) -> Result<()> {
 	let mut command = git(dir, rua_paths);
 	command.arg("diff");
 	if reverse {
 		command.arg("-R");
 	};
-	command.arg("upstream/master").status().ok();
+	command.arg("upstream/master").status()
+		.context("Failed to run git diff upstream/master")?;
+	Ok(())
 }
 
 pub fn identical_to_upstream(dir: &Path, rua_paths: &RuaPaths) -> bool {
@@ -45,7 +52,7 @@ pub fn identical_to_upstream(dir: &Path, rua_paths: &RuaPaths) -> bool {
 		.unwrap_or(false)
 }
 
-pub fn merge_upstream(dir: &Path, rua_paths: &RuaPaths) {
+pub fn merge_upstream(dir: &Path, rua_paths: &RuaPaths) -> Result<()> {
 	let email = "rua@local";
 	let name = "RUA";
 	git(dir, rua_paths)
@@ -57,14 +64,15 @@ pub fn merge_upstream(dir: &Path, rua_paths: &RuaPaths) {
 		.env("GIT_COMMITTER_NAME", name)
 		.env("GIT_COMMITTER_EMAIL", email)
 		.status()
-		.ok();
+		.context("Failed to merge upstream/master")?;
+	Ok(())
 }
 
-fn silently_run_panic_if_error(args: &[&str], dir: &Path, rua_paths: &RuaPaths) {
+fn silently_run_panic_if_error(args: &[&str], dir: &Path, rua_paths: &RuaPaths) -> Result<()> {
 	let command = git(dir, rua_paths)
 		.args(args)
 		.output()
-		.unwrap_or_else(|err| panic!("Failed to execute process git {:?}, {}", args, err));
+		.with_context(|| format!("Failed to execute process git {:?}", args))?;
 	assert!(
 		command.status.success(),
 		"Command git {} failed with exit code {:?}\nStderr: {}\nStdout: {}",
@@ -73,6 +81,7 @@ fn silently_run_panic_if_error(args: &[&str], dir: &Path, rua_paths: &RuaPaths) 
 		String::from_utf8_lossy(&command.stderr).red(),
 		String::from_utf8_lossy(&command.stdout),
 	);
+	Ok(())
 }
 
 fn git(dir: &Path, rua_paths: &RuaPaths) -> Command {

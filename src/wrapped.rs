@@ -3,6 +3,9 @@
 use crate::rua_paths;
 use crate::rua_paths::RuaPaths;
 use crate::srcinfo_to_pkgbuild;
+use anyhow::Context;
+use anyhow::Ok;
+use anyhow::bail;
 use log::debug;
 use log::error;
 use log::info;
@@ -18,6 +21,7 @@ use std::process::Stdio;
 use std::str;
 use std::str::FromStr;
 use std::sync::Once;
+use anyhow::Result;
 
 static BUBBLEWRAP_IS_RUNNABLE: Once = Once::new();
 /// Check if bubblewrap binary is runnable
@@ -59,29 +63,30 @@ fn jail_for_makepkg(rua_paths: &RuaPaths, cur_dir: &str, makepkg_dir: &str) -> C
 	command
 }
 
-fn download_srcinfo_sources(dir: &str, rua_paths: &RuaPaths) {
+fn download_srcinfo_sources(dir: &str, rua_paths: &RuaPaths) -> Result<()> {
 	let dir_path = PathBuf::from(dir).join("PKGBUILD.static");
 	let mut file = File::create(dir_path)
-		.unwrap_or_else(|err| panic!("Cannot create {}/PKGBUILD.static, {}", dir, err));
+		.with_context(|| format!("Cannot create {}/PKGBUILD.static", dir))?;
 	let srcinfo_path = PathBuf::from(dir)
 		.join(".SRCINFO")
 		.canonicalize()
-		.unwrap_or_else(|e| panic!("Cannot resolve .SRCINFO path in {}, {}", dir, e));
-	file.write_all(srcinfo_to_pkgbuild::static_pkgbuild(&srcinfo_path).as_bytes())
-		.expect("cannot write to PKGBUILD.static");
+		.with_context(|| format!("Cannot resolve .SRCINFO path in {}", dir))?;
+	file.write_all(srcinfo_to_pkgbuild::static_pkgbuild(&srcinfo_path)?.as_bytes())
+		.context("cannot write to PKGBUILD.static")?;
 	info!("Downloading sources using .SRCINFO...");
 	let command = jail_for_makepkg(rua_paths, dir, dir)
 		.args(["--bind", dir, dir])
 		.args(["makepkg", "-f", "--verifysource"])
 		.args(["-p", "PKGBUILD.static"])
 		.status()
-		.unwrap_or_else(|e| panic!("Failed to fetch dependencies in directory {}, {}", dir, e));
+		.with_context(|| format!("Failed to fetch dependencies in directory {}", dir))?;
 	assert!(command.success(), "Failed to download PKGBUILD sources");
 	fs::remove_file(PathBuf::from(dir).join("PKGBUILD.static"))
-		.expect("Failed to clean up PKGBUILD.static");
+		.context("Failed to clean up PKGBUILD.static")?;
+	Ok(())
 }
 
-pub fn generate_srcinfo(dir: &str, rua_paths: &RuaPaths) -> Result<Srcinfo, String> {
+pub fn generate_srcinfo(dir: &str, rua_paths: &RuaPaths) -> Result<Srcinfo> {
 	debug!("Getting srcinfo in directory {}", dir);
 	let mut command = jail_for_makepkg(rua_paths, dir, "/tmp");
 	command.arg("--unshare-net");
@@ -93,34 +98,31 @@ pub fn generate_srcinfo(dir: &str, rua_paths: &RuaPaths) -> Result<Srcinfo, Stri
 
 	let output = command
 		.output()
-		.map_err(|err| format!("cannot execute makepkg --holdver --printsrcinfo, {}", err))?;
+		.context("cannot execute makepkg --holdver --printsrcinfo")?;
 	if !output.status.success() {
-		return Err(format!(
+		bail!(
 			"makepkg failed to execute, Stdout:\n{}\n\nStderr:\n{}\n",
 			String::from_utf8_lossy(&output.stdout),
 			String::from_utf8_lossy(&output.stderr),
-		));
-	}
-	let output = String::from_utf8(output.stdout).map_err(|err| {
-		format!(
-			"Non-UTF8 in output of makepkg --holdver --printsrcinfo, {}",
-			err
 		)
-	})?;
+	}
+	let output = String::from_utf8(output.stdout).context(
+		"Non-UTF8 in output of makepkg --holdver --printsrcinfo",
+	)?;
 	trace!("generated SRCINFO content:\n{}", output);
-	let srcinfo = Srcinfo::from_str(&output).map_err(|e| {
+	let srcinfo = Srcinfo::from_str(&output)
+		.with_context(||
 		format!(
-			"{}:{} Failed to parse SRCINFO:\n{:?}\nError is: {}",
+			"{}:{} Failed to parse SRCINFO:\n{:?}",
 			file!(),
 			line!(),
-			output,
-			e
+			output
 		)
-	})?;
+	)?;
 	Ok(srcinfo)
 }
 
-fn build_local(dir: &str, rua_paths: &RuaPaths, offline: bool, force: bool) {
+fn build_local(dir: &str, rua_paths: &RuaPaths, offline: bool, force: bool) -> Result<()> {
 	debug!("{}:{} Building directory {}", file!(), line!(), dir);
 	let mut command = jail_for_makepkg(rua_paths, dir, dir);
 	if offline {
@@ -130,44 +132,39 @@ fn build_local(dir: &str, rua_paths: &RuaPaths, offline: bool, force: bool) {
 	if force {
 		command.arg("--force");
 	}
-	let command = command.status().unwrap_or_else(|e| {
-		panic!(
-			"Failed to execute ~/.config/rua/.system/security-wrapper.sh, {}",
-			e
-		)
-	});
+	let command = command.status()
+		.context("Failed to execute ~/.config/rua/.system/security-wrapper.sh")?;
 	if !command.success() {
-		eprintln!(
+		bail!(
 			"Build failed with exit code {} in {}",
 			command
 				.code()
 				.map_or_else(|| "???".to_owned(), |c| c.to_string()),
 			dir,
 		);
-		std::process::exit(command.code().unwrap_or(1));
 	}
+	Ok(())
 }
 
-pub fn build_directory(dir: &str, rua_paths: &RuaPaths, offline: bool, force: bool) {
+pub fn build_directory(dir: &str, rua_paths: &RuaPaths, offline: bool, force: bool) -> Result<()> {
 	if offline {
-		download_srcinfo_sources(dir, rua_paths);
+		download_srcinfo_sources(dir, rua_paths)?;
 	}
-	build_local(dir, rua_paths, offline, force);
+	build_local(dir, rua_paths, offline, force)?;
+	Ok(())
 }
 
 /// Perform a shellcheck check of a PKGBUILD, taking care of special variables
 /// See https://github.com/koalaman/shellcheck
 /// See ../res/shellcheck-wrapper
-pub fn shellcheck(target: &Option<PathBuf>) -> Result<(), String> {
+pub fn shellcheck(target: &Option<PathBuf>) -> Result<()> {
 	let target = match target {
 		None => Path::new("/dev/stdin").to_path_buf(),
 		Some(path) if path.is_dir() => path.join("PKGBUILD"),
 		Some(path) => path.to_path_buf(),
 	};
-	let target_contents = match std::fs::read_to_string(&target) {
-		Err(err) => return Err(format!("Failed to open {:?} for reading: {}", target, err)),
-		Ok(ok) => ok,
-	};
+	let target_contents = std::fs::read_to_string(&target)
+		.with_context(|| format!("Failed to open {:?} for reading", target))?;
 	check_bubblewrap_runnable();
 	let mut command = Command::new("bwrap");
 	command.args(["--ro-bind", "/", "/"]);
@@ -180,28 +177,25 @@ pub fn shellcheck(target: &Option<PathBuf>) -> Result<(), String> {
 		"/dev/stdin",
 	]);
 	command.stdin(Stdio::piped());
-	let mut child = command.spawn().map_err(|_| {
+	let mut child = command.spawn().context(
 		"Failed to spawn shellcheck process. Do you have shellcheck installed?\
 		 sudo pacman -S --needed shellcheck"
-	})?;
+	)?;
 	let stdin: &mut std::process::ChildStdin = child
 		.stdin
 		.as_mut()
-		.ok_or("Failed to open stdin for shellcheck")?;
+		.context("Failed to open stdin for shellcheck")?;
 	let bytes = rua_paths::SHELLCHECK_WRAPPER.replace("%PKGBUILD%", &target_contents);
-	stdin.write_all(bytes.as_bytes()).map_err(|err| {
-		format!(
-			"Failed to write shellcheck wrapper script to shellcheck-s stdin, {}",
-			err
-		)
-	})?;
+	stdin.write_all(bytes.as_bytes()).context(
+		"Failed to write shellcheck wrapper script to shellcheck-s stdin"
+	)?;
 	let child = child
 		.wait_with_output()
-		.map_err(|e| format!("Failed waiting for shellcheck to exit: {}", e))?;
+		.context("Failed waiting for shellcheck to exit")?;
 	if child.status.success() {
 		eprintln!("Good job, shellcheck didn't find problems in the PKGBUILD.");
 		Ok(())
 	} else {
-		Err("".to_string())
+		bail!("Shellcheck process terminated unsuccessfully")
 	}
 }

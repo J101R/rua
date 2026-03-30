@@ -2,29 +2,31 @@ use crate::git_utils;
 use crate::rua_paths::RuaPaths;
 use crate::terminal_util;
 use crate::wrapped;
+use anyhow::Context;
+use anyhow::Ok;
 use colored::Colorize;
 use log::debug;
 use std::path::Path;
+use anyhow::Result;
 
-pub fn review_repo(dir: &Path, pkgbase: &str, rua_paths: &RuaPaths) {
-	let mut dir_contents = dir.read_dir().unwrap_or_else(|err| {
-		panic!(
-			"{}:{} Failed to read directory for reviewing, {}",
+pub fn review_repo(dir: &Path, pkgbase: &str, rua_paths: &RuaPaths) -> Result<()> {
+	let mut dir_contents = dir.read_dir().with_context(|| 
+		format!(
+			"{}:{} Failed to read directory for reviewing",
 			file!(),
-			line!(),
-			err
+			line!()
 		)
-	});
+	)?;
 	if dir_contents.next().is_none() {
 		debug!("Directory {:?} is empty, using git clone", &dir);
-		git_utils::init_repo(pkgbase, dir, rua_paths);
+		git_utils::init_repo(pkgbase, dir, rua_paths)?;
 	} else {
 		debug!("Directory {:?} is not empty, fetching new version", &dir);
-		git_utils::fetch(dir, rua_paths);
+		git_utils::fetch(dir, rua_paths)?;
 	}
 
 	let build_dir = rua_paths.build_dir(pkgbase);
-	if build_dir.exists() && git_utils::is_upstream_merged(dir, rua_paths) {
+	if build_dir.exists() && git_utils::is_upstream_merged(dir, rua_paths)? {
 		eprintln!("WARNING: your AUR repo is up-to-date.");
 		eprintln!(
 			"If you continue, the build directory will be removed and the build will be re-run."
@@ -33,7 +35,7 @@ pub fn review_repo(dir: &Path, pkgbase: &str, rua_paths: &RuaPaths) {
 		let build_dir = terminal_util::escape_bash_arg(
 			build_dir
 				.to_str()
-				.unwrap_or_else(|| panic!("Failed to stringify build directory {:?}", build_dir)),
+				.with_context(|| format!("Failed to stringify build directory {:?}", build_dir))?,
 		);
 		eprintln!("for example:    rua builddir {}", build_dir);
 		eprintln!();
@@ -41,7 +43,7 @@ pub fn review_repo(dir: &Path, pkgbase: &str, rua_paths: &RuaPaths) {
 
 	loop {
 		eprintln!("\nReviewing {:?}. ", dir);
-		let is_upstream_merged = git_utils::is_upstream_merged(dir, rua_paths);
+		let is_upstream_merged = git_utils::is_upstream_merged(dir, rua_paths)?;
 		let identical_to_upstream =
 			is_upstream_merged && git_utils::identical_to_upstream(dir, rua_paths);
 		if is_upstream_merged {
@@ -95,13 +97,14 @@ pub fn review_repo(dir: &Path, pkgbase: &str, rua_paths: &RuaPaths) {
 				eprintln!("{}", err);
 			};
 		} else if &user_input == "d" && is_upstream_merged {
-			git_utils::show_upstream_diff(dir, false, rua_paths);
+			git_utils::show_upstream_diff(dir, false, rua_paths)?;
 		} else if &user_input == "d" && !is_upstream_merged {
-			git_utils::show_upstream_diff(dir, true, rua_paths);
+			git_utils::show_upstream_diff(dir, true, rua_paths)?;
 		} else if &user_input == "m" && !is_upstream_merged {
-			git_utils::merge_upstream(dir, rua_paths);
+			git_utils::merge_upstream(dir, rua_paths)?;
 		} else if &user_input == "o" && is_upstream_merged {
 			break;
 		}
 	}
+	Ok(())
 }

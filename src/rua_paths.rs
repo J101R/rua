@@ -1,5 +1,9 @@
 use crate::rua_environment;
 use crate::wrapped;
+use anyhow::Context;
+use anyhow::Ok;
+use anyhow::Result;
+use anyhow::bail;
 use colored::Colorize;
 use directories::ProjectDirs;
 use fs4::fs_std::FileExt;
@@ -37,41 +41,40 @@ impl RuaPaths {
 	/// Calculates various paths and files related to RUA.
 	/// Only use for actions that require `makepkg` execution,
 	/// because it does root and single-instance checks as well.
-	pub fn initialize_paths() -> RuaPaths {
+	pub fn initialize_paths() -> Result<RuaPaths> {
 		let dirs = &ProjectDirs::from("com.gitlab", "vn971", "rua")
-			.expect("Failed to determine XDG directories");
+			.context("Failed to determine XDG directories")?;
 		std::fs::create_dir_all(dirs.config_dir())
-			.expect("Failed to create project config directory");
-		let locked_file = File::open(dirs.config_dir()).unwrap_or_else(|err| {
-			panic!(
-				"Failed to open config dir {:?} for locking, {}",
-				dirs.config_dir(),
-				err
-			);
-		});
-		locked_file.try_lock_exclusive().unwrap_or_else(|_| {
-			eprintln!("Error: another RUA instance already running.");
-			std::process::exit(2)
-		});
-		rm_rf::ensure_removed(dirs.config_dir().join(".system")).ok();
+			.context("Failed to create project config directory")?;
+		let locked_file = File::open(dirs.config_dir())
+			.with_context(|| format!(
+				"Failed to open config dir {:?} for locking",
+				dirs.config_dir()
+			))?;
+		locked_file.try_lock_exclusive()
+			.context("Error: another RUA instance already running.")?;
+		rm_rf::ensure_removed(dirs.config_dir().join(".system"))?;
 		std::fs::create_dir_all(dirs.config_dir().join(".system"))
-			.expect("Failed to create project config directory");
+			.context("Failed to create project config directory")?;
 		std::fs::create_dir_all(dirs.config_dir().join("wrap_args.d"))
-			.expect("Failed to create project config directory");
+			.context("Failed to create project config directory")?;
 
 		let seccomp_path = &dirs.config_dir().join(SECCOMP_PATH);
-		overwrite_file(seccomp_path, SECCOMP_BPF);
-		rua_environment::set_env_if_not_set("RUA_SECCOMP_FILE", seccomp_path.to_str().unwrap());
+		overwrite_file(seccomp_path, SECCOMP_BPF)?;
+		let seccomp_path = seccomp_path
+			.to_str()
+			.context("Failed to convert seccomp path to string")?;
+		rua_environment::set_env_if_not_set("RUA_SECCOMP_FILE", seccomp_path);
 
-		overwrite_script(&dirs.config_dir().join(WRAP_SCRIPT_PATH), WRAP_SH);
+		overwrite_script(&dirs.config_dir().join(WRAP_SCRIPT_PATH), WRAP_SH)?;
 		overwrite_script(
 			&dirs.config_dir().join(MAKEPKG_CONFIG_LOADER_PATH),
 			CONFIG_LOADER,
-		);
+		)?;
 		ensure_script(
 			&dirs.config_dir().join(".system/wrap_args.sh.example"),
 			WRAP_ARGS_EXAMPLE,
-		);
+		)?;
 		let makepkg_config_loader_path = dirs.config_dir().join(MAKEPKG_CONFIG_LOADER_PATH);
 
 		wrapped::check_bubblewrap_runnable();
@@ -81,28 +84,28 @@ impl RuaPaths {
 		let global_review_dir = dirs.config_dir().join("pkg");
 
 		std::fs::create_dir_all(&global_build_dir)
-			.expect("Failed to create global build directory");
-		let global_build_dir = global_build_dir.canonicalize().unwrap_or_else(|err| {
-			panic!(
-				"Failed to canonicalize global build dir {:?}, {}",
-				global_build_dir, err
+			.context("Failed to create global build directory")?;
+		let global_build_dir = global_build_dir.canonicalize().with_context(||
+			format!(
+				"Failed to canonicalize global build dir {:?}",
+				global_build_dir
 			)
-		});
+		)?;
 		show_legacy_dir_warnings(dirs, global_checked_tars_dir.as_path());
 		std::fs::create_dir_all(&global_checked_tars_dir)
-			.expect("Failed to create global checked_tars directory");
+			.context("Failed to create global checked_tars directory")?;
 		std::fs::create_dir_all(&global_review_dir)
-			.expect("Failed to create global review directory");
+			.context("Failed to create global review directory")?;
 
 		// All directories must exist upon `RuaPaths` creation.
-		RuaPaths {
+		Ok(RuaPaths {
 			global_build_dir,
 			global_review_dir,
 			global_checked_tars_dir,
 			wrapper_bwrap_script: dirs.config_dir().join(WRAP_SCRIPT_PATH),
-			makepkg_pkgext: perform_makepkg_checks_and_return_pkgext(&makepkg_config_loader_path),
+			makepkg_pkgext: perform_makepkg_checks_and_return_pkgext(&makepkg_config_loader_path)?,
 			_global_lock: locked_file,
-		}
+		})
 	}
 
 	/// Same as `global_review_dir`, but for a specific pkgbase
@@ -121,20 +124,21 @@ impl RuaPaths {
 	}
 }
 
-fn perform_makepkg_checks_and_return_pkgext(makepkg_config_loader_path: &Path) -> String {
+fn perform_makepkg_checks_and_return_pkgext(makepkg_config_loader_path: &Path) -> Result<String> {
 	let mut pkgext = None;
 
 	let config = Command::new(makepkg_config_loader_path)
 		.output()
-		.unwrap_or_else(|e| panic!("Internal error: failed to run makepkg config loader: {}", e))
+		.context("Internal error: failed to run makepkg config loader")?
 		.stdout;
-	let config = String::from_utf8(config).expect("makepkg config loader returned non-UTF-8 data");
+	let config = String::from_utf8(config)
+		.context("makepkg config loader returned non-UTF-8 data")?;
 
 	// format: `VAR=VALUE\0`
 	let config_entries = config.split_terminator('\0').map(|line| {
 		let sep_pos = line
 			.find('=')
-			.unwrap_or_else(|| panic!("Malformed config loader output, line: {}", line));
+			.expect(&format!("Malformed config loader output, line: {}", line));
 		(&line[..sep_pos], &line[sep_pos + 1..])
 	});
 
@@ -159,7 +163,7 @@ fn perform_makepkg_checks_and_return_pkgext(makepkg_config_loader_path: &Path) -
 					pkgext = Some(value.to_owned());
 				}
 
-				_ => panic!(
+				_ => bail!(
 					"PKGEXT is set to an unsupported value: {}. \
 					Only .pkg.tar or .pkg.tar.xz or .pkg.tar.gz or .pkg.tar.zst archives are \
 					allowed for now. RUA needs those extensions to look inside the archives for \
@@ -176,53 +180,60 @@ fn perform_makepkg_checks_and_return_pkgext(makepkg_config_loader_path: &Path) -
 		unsafe { env::set_var(var, "/dev/null") }; // make sure we override it later
 	}
 
-	pkgext.expect("Internal error: no PKGEXT entry in makepkg configuration?!")
+	Ok(
+		pkgext
+			.context("Internal error: no PKGEXT entry in makepkg configuration?!")?
+	)
 }
 
-fn overwrite_file(path: &Path, content: &[u8]) {
+fn overwrite_file(path: &Path, content: &[u8]) -> Result<()> {
 	let mut file = OpenOptions::new()
 		.create(true)
 		.write(true)
 		.truncate(true)
 		.open(path)
-		.unwrap_or_else(|err| panic!("Failed to overwrite (initialize) file {:?}, {}", path, err));
-	file.write_all(content).unwrap_or_else(|e| {
-		panic!(
-			"Failed to write to file {:?} during initialization, {}",
-			path, e
-		)
-	});
+		.with_context(|| format!("Failed to overwrite (initialize) file {:?}", path))?;
+	file.write_all(content)
+		.with_context(|| format!(
+			"Failed to write to file {:?} during initialization",
+			path
+		))?;
+	Ok(())
 }
 
-fn ensure_script(path: &Path, content: &[u8]) {
+fn ensure_script(path: &Path, content: &[u8]) -> Result<()> {
 	if !path.exists() {
 		let mut file = OpenOptions::new()
 			.create(true)
 			.truncate(true)
 			.write(true)
 			.open(path)
-			.unwrap_or_else(|e| panic!("Failed to overwrite (initialize) file {:?}, {}", path, e));
-		file.write_all(content).unwrap_or_else(|e| {
-			panic!(
-				"Failed to write to file {:?} during initialization, {}",
-				path, e
+			.with_context(|| format!("Failed to overwrite (initialize) file {:?}", path))?;
+		file.write_all(content).with_context(||
+			format!(
+				"Failed to write to file {:?} during initialization",
+				path
 			)
-		});
+		)?;
 		fs::set_permissions(path, Permissions::from_mode(0o755))
-			.unwrap_or_else(|e| panic!("Failed to set permissions for {:?}, {}", path, e));
+			.with_context(|| format!("Failed to set permissions for {:?}", path))?;
 	}
+	Ok(())
 }
 
-fn overwrite_script(path: &Path, content: &[u8]) {
-	overwrite_file(path, content);
+fn overwrite_script(path: &Path, content: &[u8]) -> Result<()> {
+	overwrite_file(path, content)?;
 	fs::set_permissions(path, Permissions::from_mode(0o755))
-		.unwrap_or_else(|e| panic!("Failed to set permissions for {:?}, {}", path, e));
+		.with_context(|| format!("Failed to set permissions for {:?}", path))?;
+	Ok(())
 }
 
 fn show_legacy_dir_warnings(dirs: &ProjectDirs, correct_dir: &Path) {
 	let old_dir = dirs.cache_dir().join("checked_tars");
 	if old_dir.exists() {
-		let old_dir_str = old_dir.to_str().unwrap_or("~/.cache/rua/checked_tars");
+		let old_dir_str = old_dir
+			.to_str()
+			.unwrap_or("~/.cache/rua/checked_tars");
 		eprintln!(
 			"INFO: you have a legacy directory from an older RUA version: {}",
 			&old_dir_str

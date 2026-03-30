@@ -1,4 +1,6 @@
 use crate::terminal_util::escape_bash_arg;
+use anyhow::Context;
+use anyhow::Result;
 use srcinfo::ArchVec;
 use srcinfo::Srcinfo;
 use std::path::Path;
@@ -28,9 +30,9 @@ fn push_arrays(pkgbuild: &mut String, key: &str, arch_values: &[ArchVec]) {
 	}
 }
 
-pub fn static_pkgbuild(path: &Path) -> String {
+pub fn static_pkgbuild(path: &Path) -> Result<String> {
 	let srcinfo = Srcinfo::from_path(path)
-		.unwrap_or_else(|e| panic!("{}:{} Failed to parse {:?}, {}", file!(), line!(), path, e));
+		.with_context(|| format!("{}:{} Failed to parse {:?}", file!(), line!(), path))?;
 	let mut pkgbuild = String::new();
 
 	push_field(&mut pkgbuild, "pkgname", "tmp");
@@ -46,5 +48,5 @@ pub fn static_pkgbuild(path: &Path) -> String {
 	push_arrays(&mut pkgbuild, "sha512sums", &srcinfo.base.sha512sums);
 	push_arrays(&mut pkgbuild, "b2sums", &srcinfo.base.b2sums);
 
-	pkgbuild
+	Ok(pkgbuild)
 }

@@ -5,6 +5,8 @@ use crate::aur_rpc_utils;
 use crate::pacman;
 use crate::rua_paths::RuaPaths;
 use crate::terminal_util;
+use anyhow::Context;
+use anyhow::Ok;
 use anyhow::Result;
 use colored::*;
 use itertools::Itertools;
@@ -16,14 +18,14 @@ use regex::Regex;
 use std::cmp::Ordering;
 use std::collections::HashMap;
 use std::collections::HashSet;
+use std::process::ExitCode;
 use std::sync::LazyLock;
-use anyhow::anyhow;
 
 fn pkg_is_devel(name: &str) -> bool {
 	// make sure that the --devel help string in cli_args.rs matches if you change this
 	let re: LazyLock<Regex> = LazyLock::new(|| {
 		Regex::new(r"-(git|hg|bzr|svn|cvs|darcs)(-.+)*$")
-			.expect("Failed to compile regex pattern for version control files.")
+			.expect("Failed to compile regex pattern for version control files")
 	});
 	re.is_match(name)
 }
@@ -57,17 +59,18 @@ pub fn upgrade_real(
 	rua_paths: &RuaPaths,
 	ignored: &HashSet<&str>,
 	target: &Option<Vec<String>>
-) {
+) -> Result<ExitCode> {
 	let alpm = new_alpm_wrapper();
 	let (outdated, nonexistent) =
-		calculate_upgrade(&*alpm, devel, ignored, target).expect("calculating upgrade failed");
+		calculate_upgrade(&*alpm, devel, ignored, target)
+			.context("calculating upgrade failed")?;
 
 	if outdated.is_empty() && nonexistent.is_empty() {
 		eprintln!(
 			"{}",
 			"Good job! All AUR packages are up-to-date.".bright_green()
 		);
-		std::process::exit(7);
+		return Ok(ExitCode::from(crate::exit_codes::CODE_7));
 	} else if outdated.is_empty() {
 		eprintln!("All AUR packages are up-to-date, but there are some packages installed locally that do not exist in neither pacman nor AUR.");
 		eprintln!("These might be old dependencies from changed packages in pacman, or an AUR package that was removed from AUR.");
@@ -82,13 +85,14 @@ pub fn upgrade_real(
 			let user_input = terminal_util::read_line_lowercase();
 			if &user_input == "o" {
 				let outdated: Vec<String> = outdated.iter().map(|o| o.0.to_string()).collect();
-				action_install::install(&outdated, rua_paths, false, true);
+				action_install::install(&outdated, rua_paths, false, true)?;
 				break;
 			} else if &user_input == "x" {
 				break;
 			}
 		}
 	}
+	Ok(ExitCode::SUCCESS)
 }
 
 type OutdatedPkgs = Vec<(String, String, String)>;
@@ -116,7 +120,7 @@ fn calculate_upgrade(
 				lookup
 					.get(user_pkg)
 					.cloned()
-					.ok_or_else(|| anyhow!("Could not find a package named: {}", user_pkg))
+					.with_context(|| format!("Could not find a package named: {}", user_pkg))
 			}).collect::<Result<Vec<_>, _>>()?
 		},
 		None => raw_pkgs,
@@ -136,7 +140,7 @@ fn calculate_upgrade(
 	let mut ignored = Vec::new();
 
 	let info_map = aur_rpc_utils::info_map(&aur_pkgs.iter().map(|(p, _)| p).collect_vec());
-	let info_map = info_map.unwrap_or_else(|err| panic!("Failed to get AUR information: {}", err));
+	let info_map = info_map.context("Failed to get AUR information")?;
 
 	for (pkg, local_ver) in aur_pkgs {
 		let raur_ver: Option<String> = info_map.get(&pkg).map(|p| p.version.to_string());

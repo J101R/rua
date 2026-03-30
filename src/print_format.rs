@@ -1,4 +1,4 @@
-use anyhow::anyhow;
+use anyhow::Context;
 use anyhow::Result;
 use chrono::DateTime;
 use colored::*;
@@ -10,13 +10,14 @@ pub fn opt(opt: &Option<String>) -> &str {
 }
 
 pub fn date(timestamp: i64) -> Result<String> {
-	match DateTime::from_timestamp(timestamp, 0) {
-		Some(dt) => Ok(dt.format(DATE_FORMAT).to_string()),
-		None => Err(anyhow!(
+	let dt = DateTime::from_timestamp(timestamp, 0)
+		.with_context(|| format!(
 			"Cannot convert timestamp {} to date/time",
 			timestamp
-		)),
-	}
+		))?
+		.format(DATE_FORMAT)
+		.to_string();
+	return Ok(dt);
 }
 
 pub fn print_indent<'a>(

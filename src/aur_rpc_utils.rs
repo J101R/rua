@@ -1,4 +1,6 @@
 use crate::alpm_wrapper::AlpmWrapper;
+use anyhow::Context;
+use anyhow::Ok;
 use anyhow::Result;
 use indexmap::IndexMap;
 use indexmap::IndexSet;
@@ -40,7 +42,11 @@ pub fn recursive_info(
 			let deps = make_deps
 				.chain(flat_deps)
 				.chain(check_deps)
-				.map(|d| clean_and_check_package_name(d))
+				.map(|d| 
+					clean_and_check_package_name(d)
+						.expect(
+							&format!("Failed to clean and check package: {}", d)
+						))
 				.collect_vec();
 
 			for dependency in deps.into_iter() {
@@ -58,7 +64,7 @@ pub fn recursive_info(
 					}
 					let parent_depth = depth_map
 						.get(&info.name)
-						.expect("Internal error: queue element does not have depth");
+						.context("Internal error: queue element does not have depth")?;
 					let new_depth = depth_map
 						.get(&dependency)
 						.map_or(parent_depth + 1, |d| (*d).max(parent_depth + 1));
@@ -90,34 +96,28 @@ pub fn info_map<S: AsRef<str>>(packages_to_query: &[S]) -> Result<IndexMap<Strin
 	Ok(result)
 }
 
-fn clean_and_check_package_name(name: &str) -> String {
-	match clean_package_name(name) {
-		Some(name) => name,
-		None => {
-			eprintln!("Unexpected package name {}", name);
-			std::process::exit(1)
-		}
-	}
+fn clean_and_check_package_name(name: &str) -> Result<String> {
+	let value = clean_package_name(name) 
+		.with_context(|| format!("Unexpected package name {}", name))?;
+	Ok(value)
 }
 
 fn clean_package_name(name: &str) -> Option<String> {
 	let cleanup: LazyLock<Regex> = LazyLock::new(|| 
 		Regex::new(r"(=.*|>.*|<.*)")
-			.unwrap_or_else(|err| panic!(
-				"{}:{} Failed to parse regexp, {}",
+			.expect(&format!(
+				"{}:{} Failed to parse regexp",
 				file!(),
-				line!(),
-				err
+				line!()
 			))
 	);
 	let name: String = cleanup.replace_all(name, "").to_string();
 	let name_regex: LazyLock<Regex> = LazyLock::new(||
 		Regex::new(r"^[a-zA-Z0-9@_+][a-zA-Z0-9@_+.-]*$")
-			.unwrap_or_else(|err| panic!(
-				"{}:{} Failed to parse regexp, {}",
+			.expect(&format!(
+				"{}:{} Failed to parse regexp",
 				file!(),
-				line!(),
-				err
+				line!()
 			))
 	);
 	if name_regex.is_match(&name) {

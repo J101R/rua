@@ -3,11 +3,11 @@ use crate::print_format::date;
 use crate::print_format::opt;
 use crate::print_format::print_indent;
 use anyhow::Context;
-use anyhow::Error;
+use anyhow::Result;
 use colored::*;
 use termize::dimensions_stdout;
 
-pub fn info(pkgs: &[String], verbose: bool) -> Result<(), Error> {
+pub fn info(pkgs: &[String], verbose: bool) -> Result<()> {
 	let pkg_map = info_map(pkgs)?;
 
 	let mut all_pkgs = Vec::with_capacity(pkg_map.len());

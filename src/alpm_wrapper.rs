@@ -1,6 +1,6 @@
-use anyhow::anyhow;
 use anyhow::Context;
 use anyhow::Result;
+use anyhow::bail;
 use itertools::Itertools;
 use std::cmp::Ordering;
 use std::process::Command;
@@ -34,13 +34,12 @@ impl AlpmWrapper for AlpmBinWrapper {
 			.stdout(Stdio::null())
 			.stderr(Stdio::null())
 			.status()
-			.map_err(|err| {
-				anyhow!(
-					"Failed to determine if package {} is installed, {}",
-					package,
-					err
+			.with_context(||
+				format!(
+					"Failed to determine if package {} is installed",
+					package
 				)
-			})?
+			)?
 			.success();
 		Ok(result)
 	}
@@ -51,13 +50,12 @@ impl AlpmWrapper for AlpmBinWrapper {
 			.stdout(Stdio::null())
 			.stderr(Stdio::null())
 			.status()
-			.map_err(|err| {
-				anyhow!(
-					"Failed to determine if package {} is installable, {}",
-					package,
-					err
+			.with_context(||
+				format!(
+					"Failed to determine if package {} is installable",
+					package
 				)
-			})?;
+			)?;
 		Ok(result.success())
 	}
 
@@ -73,7 +71,7 @@ impl AlpmWrapper for AlpmBinWrapper {
 			match split[..] {
 				[package, version] => result.push((package.to_string(), version.to_string())),
 				_ => {
-					return Err(anyhow!(
+					bail!(format!(
 						"Failed to parse (package,version) from pacman line {}",
 						line
 					))
