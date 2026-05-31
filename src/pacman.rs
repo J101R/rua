@@ -9,14 +9,15 @@ use std::path::PathBuf;
 use std::process::Command;
 use std::str;
 use std::sync::LazyLock;
+use anyhow::{Context, Result, Ok};
 
-pub fn get_ignored_packages() -> Result<HashSet<String>, String> {
+pub fn get_ignored_packages() -> Result<HashSet<String>> {
 	let command = Command::new("pacman-conf")
 		.arg("IgnorePkg")
 		.output()
-		.map_err(|_| "cannot execute pacman-conf IgnorePkg")?;
+		.context("cannot execute pacman-conf IgnorePkg")?;
 	let output = String::from_utf8(command.stdout)
-		.map_err(|err| format!("Failed to parse output of pacman-conf IgnorePkg, {}", err))?;
+		.context("Failed to parse output of pacman-conf IgnorePkg")?;
 	Ok(output.lines().map(ToOwned::to_owned).collect())
 }
 

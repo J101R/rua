@@ -6,7 +6,6 @@ use anyhow::Result;
 use anyhow::bail;
 use colored::Colorize;
 use directories::ProjectDirs;
-use fs4::fs_std::FileExt;
 use log::debug;
 use std::env;
 use std::fs;
@@ -51,7 +50,7 @@ impl RuaPaths {
 				"Failed to open config dir {:?} for locking",
 				dirs.config_dir()
 			))?;
-		locked_file.try_lock_exclusive()
+		locked_file.try_lock()
 			.context("Error: another RUA instance already running.")?;
 		rm_rf::ensure_removed(dirs.config_dir().join(".system"))?;
 		std::fs::create_dir_all(dirs.config_dir().join(".system"))
