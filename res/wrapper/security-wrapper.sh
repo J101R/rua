@@ -39,7 +39,7 @@ exec nice -n19 \
   --ro-bind-try "${GNUPGHOME:-$HOME/.gnupg}/pubring.gpg" "${GNUPGHOME:-$HOME/.gnupg}/pubring.gpg" \
   --clearenv \
   --setenv XDG_RUNTIME_DIR "$XDG_RUNTIME_DIR" \
-  --setenv PATH "$PATH" \
+  --setenv PATH "/usr/bin:$PATH" \
   --setenv USER "$USER" \
   --setenv LOGNAME "$LOGNAME" \
   --setenv TERM "$TERM" \
