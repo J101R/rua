@@ -1,6 +1,6 @@
 [package]
 name = "rua"
-version = "0.19.10"
+version = "0.20.0"
 description = "Secure jailed AUR helper for Arch Linux"
 authors = [
   "Vasili Novikov (maintainer) <vasya.novikov+cm3513git@gmail.com>",
@@ -25,7 +25,7 @@ clap_complete = "4.6.7"
 libseccomp = "0.4.0"
 
 [dependencies]
-anyhow = { version = "1.0.103",   default-features = false, features = ["std", "backtrace"] }
+anyhow = { version = "1.0.104",   default-features = false, features = ["std", "backtrace"] }
 chrono = { version = "0.4.45",    default-features = false, features = ["std", "clock"] }
 colored = "3.1.1"
 directories = "6.0.0"
