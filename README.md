@@ -9,8 +9,8 @@ This fork keeps the original workflow, while updating dependencies, removing unm
 - Updated dependencies
 - Removed unmaintained crates
 - Hardened the security wrapper
-- Switched seccomp to `KillProcess` instead of `killthread`
-- Updated `tar` to address `RUSTSEC-2026-0068`
+- Switched seccomp to use `KillProcess` instead of `killthread`
+- Updated `tar` to address [RUSTSEC-2026-0068](https://rustsec.org/advisories/RUSTSEC-2026-0068)
 
 ## Features
 
