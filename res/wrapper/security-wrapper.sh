@@ -30,7 +30,7 @@ exec nice -n19 \
   --ro-bind /sys /sys \
   --tmpfs /tmp \
   --tmpfs /run \
-  --tmpfs /var/run \
+  --symlink ../run /var/run \
   --tmpfs /var/tmp \
   --perms 0700 --tmpfs "$XDG_RUNTIME_DIR" \
   --tmpfs "$HOME" \
