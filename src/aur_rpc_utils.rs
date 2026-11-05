@@ -5,6 +5,7 @@ use anyhow::Result;
 use indexmap::IndexMap;
 use indexmap::IndexSet;
 use itertools::Itertools;
+use reqwest::blocking::Client;
 use std::sync::LazyLock;
 use log::trace;
 use raur::blocking::Handle;
@@ -23,7 +24,9 @@ pub fn recursive_info(
 	root_packages_to_process: &[String],
 	alpm: &dyn AlpmWrapper,
 ) -> Result<RecursiveInfo> {
-	let raur_handle = Handle::default();
+	let client = aur_client()
+		.context("Could not build web client")?;
+	let raur_handle = Handle::new_with_client(client);
 	let mut queue: Vec<String> = Vec::from(root_packages_to_process);
 	let mut depth_map = IndexMap::new();
 	for pkg in &queue {
@@ -85,7 +88,9 @@ pub fn recursive_info(
 /// # Arguments
 /// * `packages_to_query` - A slice of package names to find in the AUR
 pub fn info_map<S: AsRef<str>>(packages_to_query: &[S]) -> Result<IndexMap<String, Package>> {
-	let raur_handle = Handle::new();
+	let client = aur_client()
+		.context("Could not build web client")?;
+	let raur_handle = Handle::new_with_client(client);
 	let mut result = IndexMap::new();
 	for group in packages_to_query.chunks(BATCH_SIZE) {
 		let group_info = raur_handle.info(group)?;
@@ -125,6 +130,12 @@ fn clean_package_name(name: &str) -> Option<String> {
 	} else {
 		None
 	}
+}
+
+pub fn aur_client() -> reqwest::Result<Client> {
+    Client::builder()
+        .user_agent(concat!("rua/", env!("CARGO_PKG_VERSION")))
+        .build()
 }
 
 #[cfg(test)]

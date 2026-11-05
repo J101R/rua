@@ -1,5 +1,6 @@
 use std::process::ExitCode;
 
+use crate::aur_rpc_utils;
 use crate::print_package_table;
 use anyhow::Context;
 use anyhow::Ok;
@@ -23,7 +24,9 @@ pub fn action_search(keywords: &[String]) -> Result<ExitCode> {
 	let query = keywords
 		.first()
 		.context("Zero search arguments, should be impossible in clap")?;
-	let raur_handle = raur::blocking::Handle::new();
+	let client = aur_rpc_utils::aur_client()
+		.context("Could not build web client")?;
+	let raur_handle = raur::blocking::Handle::new_with_client(client);
 	let mut result = raur_handle.search_by(query, SearchBy::NameDesc)
 		.context("Search error")?;
 	if result.is_empty() {

@@ -82,7 +82,7 @@ fn main() -> Result<ExitCode> {
 				.flat_map(|i| i.split(','))
 				.collect::<HashSet<&str>>();
 			if *printonly {
-				action_upgrade::upgrade_printonly(*devel, &ignored_set, target);
+				action_upgrade::upgrade_printonly(*devel, &ignored_set, target)?;
 			} else {
 				let paths = rua_paths::RuaPaths::initialize_paths()?;
 				let code = action_upgrade::upgrade_real(*devel, &paths, &ignored_set, target)?;

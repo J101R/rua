@@ -34,10 +34,11 @@ pub fn upgrade_printonly(
 	devel: bool,
 	ignored: &HashSet<&str>,
 	target: &Option<Vec<String>>
-) {
+) -> Result<()> {
 	let alpm = new_alpm_wrapper();
 	let (outdated, nonexistent) =
-		calculate_upgrade(&*alpm, devel, ignored, target).expect("Calculating upgrade failed");
+		calculate_upgrade(&*alpm, devel, ignored, target)
+			.context("Calculating upgrade failed")?;
 
 	if outdated.is_empty() && nonexistent.is_empty() {
 		eprintln!(
@@ -52,6 +53,7 @@ pub fn upgrade_printonly(
 			println!("{}", pkg);
 		}
 	}
+	Ok(())
 }
 
 pub fn upgrade_real(
@@ -63,7 +65,7 @@ pub fn upgrade_real(
 	let alpm = new_alpm_wrapper();
 	let (outdated, nonexistent) =
 		calculate_upgrade(&*alpm, devel, ignored, target)
-			.context("calculating upgrade failed")?;
+			.context("Calculating upgrade failed")?;
 
 	if outdated.is_empty() && nonexistent.is_empty() {
 		eprintln!(
