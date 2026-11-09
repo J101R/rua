@@ -8,6 +8,14 @@ for filename in ~/.config/rua/wrap_args.d/*.sh ; do
   if test -e "$filename"; then source "$filename"; fi
 done
 
+resolv_conf="/etc/resolv.conf"
+# Handle systemd-resolved managed /etc/resolv.conf
+if [ -L /etc/resolv.conf ] && [[ "$(readlink -f /etc/resolv.conf)" == "/run/systemd/resolve/stub-resolv.conf" ]];
+then
+	resolv_conf=$(readlink -f /etc/resolv.conf)
+fi
+
+
 exec nice -n19 \
   ionice -c idle \
   bwrap \
@@ -34,7 +42,7 @@ exec nice -n19 \
   --tmpfs /var/tmp \
   --perms 0700 --tmpfs "$XDG_RUNTIME_DIR" \
   --tmpfs "$HOME" \
-  --ro-bind /etc/resolv.conf /etc/resolv.conf \
+  --ro-bind "$resolv_conf" "$resolv_conf" \
   --ro-bind-try "${GNUPGHOME:-$HOME/.gnupg}/pubring.kbx" "${GNUPGHOME:-$HOME/.gnupg}/pubring.kbx" \
   --ro-bind-try "${GNUPGHOME:-$HOME/.gnupg}/pubring.gpg" "${GNUPGHOME:-$HOME/.gnupg}/pubring.gpg" \
   --clearenv \
