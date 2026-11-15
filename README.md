@@ -94,8 +94,8 @@ sudo pacman -S --needed --asdeps git base-devel bubblewrap-suid libseccomp xz sh
 
 ```sh
 sudo pacman -S --needed base-devel git
-git clone https://aur.archlinux.org/rua.git
-cd rua
+git clone https://aur.archlinux.org/rua-fork.git
+cd rua-fork
 makepkg -si
 ```
 
